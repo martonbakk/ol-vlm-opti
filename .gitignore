@@ -1,0 +1,12 @@
+.venv
+.vscode
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.csv
+nsys_report_*.qdrep
+nsys_report_*.csv
+qwen_chartqa_lora/
+qwen_vlm_checkpoints/
