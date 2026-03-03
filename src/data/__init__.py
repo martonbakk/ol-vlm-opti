@@ -1,3 +1,1 @@
-from .datasets import QwenDataset
-
-__all__ = ["QwenDataset"]
+from .data import QwenDataset
