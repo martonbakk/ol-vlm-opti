@@ -2,7 +2,7 @@ import torch
 from transformers import AutoModelForImageTextToText, AutoProcessor
 
 
-class QwenWrapper:
+class QwenVLWrapper:
     def __init__(self, model_id: str) -> None:
         self.model_id = model_id
         self.processor = AutoProcessor.from_pretrained(model_id)
@@ -40,7 +40,9 @@ class QwenWrapper:
         inputs = self.__prepare_chat_inputs(image=image, question=question)
         output_ids = self.model.generate(**inputs, max_new_tokens=max_new_tokens)
         generated_ids = output_ids[:, inputs.input_ids.shape[-1] :]
-        return self.processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
+        return self.processor.batch_decode(generated_ids, skip_special_tokens=True)[
+            0
+        ].strip()
 
     def generate(self, image, question: str, max_length: int = 512) -> str:
         return self.answer(image=image, question=question, max_new_tokens=max_length)

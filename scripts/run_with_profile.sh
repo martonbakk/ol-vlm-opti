@@ -31,7 +31,7 @@ MONITOR_PID=$!
 cd "$(dirname "$0")/.." || exit 1
 PYTHON_EXEC=$(uv run which python)
 sudo env PATH="$PATH" HF_HOME="${HF_HOME:-$HOME/.cache/huggingface}" PYTHONUNBUFFERED=1 \
-    nsys profile -t cuda,osrt -o "$NSYS_OUT" "$PYTHON_EXEC" "$SCRIPT"
+    nsys profile -t cuda,nvtx -o "$NSYS_OUT" "$PYTHON_EXEC" "$SCRIPT"
 
 EXIT_STATUS=$?
 kill $MONITOR_PID 2>/dev/null

@@ -13,3 +13,6 @@ qwen_chartqa_lora/
 qwen_vlm_checkpoints/
 cache/
 data/*
+.env
+.deepeval
+reports/

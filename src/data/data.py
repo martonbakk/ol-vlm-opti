@@ -60,5 +60,5 @@ class QwenDataset(Dataset):
 
         inputs = self.processor(text=[text], images=[image], return_tensors="pt")
         inputs = {key: value.squeeze(0) for key, value in inputs.items()}
-        inputs["labels"] = inputs["input_ids"].clone()
+        # Labels are built once per batch in finetune_job.__collate_fn (fewer clones / D2D than per-sample).
         return inputs
