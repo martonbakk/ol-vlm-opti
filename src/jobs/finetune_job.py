@@ -190,7 +190,25 @@ def main() -> None:
     parser.add_argument("--epochs", type=float, default=1.0)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--cache-dir", default="./data")
-    parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument(
+        "--vision-max-pixels",
+        type=int,
+        default=262144,
+        help="Upper bound for processor image pixels (H*W). Lower means less VRAM.",
+    )
+    parser.add_argument(
+        "--vision-min-pixels",
+        type=int,
+        default=50176,
+        help="Lower bound for processor image pixels (H*W).",
+    )
+    parser.add_argument(
+        "--image-max-side",
+        type=int,
+        default=768,
+        help="Resize images on CPU so the longest side is at most this value.",
+    )
     parser.add_argument(
         "--no-bf16",
         action="store_true",
@@ -205,7 +223,11 @@ def main() -> None:
     args = parser.parse_args()
 
     print("Loading model and processor...")
-    processor = AutoProcessor.from_pretrained(args.model_id)
+    processor = AutoProcessor.from_pretrained(
+        args.model_id,
+        min_pixels=args.vision_min_pixels,
+        max_pixels=args.vision_max_pixels,
+    )
     model = AutoModelForImageTextToText.from_pretrained(
         args.model_id,
         device_map="cuda" if torch.cuda.is_available() else "cpu",
@@ -218,6 +240,7 @@ def main() -> None:
         split=args.split,
         processor=processor,
         cache_dir=args.cache_dir,
+        image_max_side=args.image_max_side,
     )
 
     run_finetune(

@@ -17,9 +17,11 @@ class QwenDataset(Dataset):
         split: str,
         processor: Any,
         cache_dir: str | None = None,
+        image_max_side: int | None = None,
     ) -> None:
         self.dataset = load_dataset(dataset_id, split=split, cache_dir=cache_dir)
         self.processor = processor
+        self.image_max_side = image_max_side
 
     def __len__(self) -> int:
         return len(self.dataset)
@@ -35,6 +37,8 @@ class QwenDataset(Dataset):
             if isinstance(image_data, (list, np.ndarray))
             else image_data
         )
+        if self.image_max_side is not None:
+            image = self.__resize_image_keep_aspect(image, self.image_max_side)
         question = item["question"]
         answer = str(item["answer"])
 
@@ -62,3 +66,15 @@ class QwenDataset(Dataset):
         inputs = {key: value.squeeze(0) for key, value in inputs.items()}
         # Labels are built once per batch in finetune_job.__collate_fn (fewer clones / D2D than per-sample).
         return inputs
+
+    @staticmethod
+    def __resize_image_keep_aspect(image: Image.Image, max_side: int) -> Image.Image:
+        width, height = image.size
+        longest_side = max(width, height)
+        if longest_side <= max_side:
+            return image
+
+        scale = max_side / float(longest_side)
+        new_width = max(1, int(round(width * scale)))
+        new_height = max(1, int(round(height * scale)))
+        return image.resize((new_width, new_height), Image.BICUBIC)
