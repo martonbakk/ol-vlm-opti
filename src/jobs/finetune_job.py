@@ -14,8 +14,10 @@ from transformers import (
     TrainingArguments,
 )
 from transformers import TrainerCallback
-
+from transformers import EarlyStoppingCallback
 from src.data.data import QwenDataset
+
+from src.token_pruner.sparsity import apply_qwen3_sparsity
 
 
 def _patch_module_zero_grad_set_to_none(module: torch.nn.Module) -> None:
@@ -69,6 +71,7 @@ def run_finetune(
     *,
     bf16: bool | None = None,
     optim: str | None = None,
+    seed: int = 42,
 ) -> None:
     """Run fine-tuning with model, processor and dataset already loaded (e.g. from notebook).
 
@@ -92,24 +95,78 @@ def run_finetune(
     if optim_name is None:
         optim_name = "adamw_torch"
 
-    training_args = TrainingArguments(
-        output_dir=output_dir,
-        num_train_epochs=epochs,
-        per_device_train_batch_size=batch_size,
-        remove_unused_columns=False,
-        save_strategy="no",
-        logging_steps=5,
-        bf16=use_bf16,
-        fp16=False,
-        optim=optim_name,
-    )
+    dataset_len = len(dataset)
+    if dataset_len >= 2:
+        train_size = max(1, int(0.9 * dataset_len))
+        eval_size = dataset_len - train_size
+        if eval_size == 0:
+            train_size = dataset_len - 1
+            eval_size = 1
+        train_dataset = torch.utils.data.Subset(dataset, range(0, train_size))
+        eval_dataset = torch.utils.data.Subset(
+            dataset, range(train_size, train_size + eval_size)
+        )
+        use_eval = True
+    else:
+        print("Dataset has fewer than 2 samples; skipping eval split and early stopping.")
+        train_dataset = dataset
+        eval_dataset = None
+        use_eval = False
+
+    training_kwargs: dict[str, Any] = {
+        "output_dir": output_dir,
+        "num_train_epochs": epochs,
+        "per_device_train_batch_size": batch_size,
+        "remove_unused_columns": False,
+        "logging_steps": 5,
+        "bf16": use_bf16,
+        "fp16": False,
+        "optim": optim_name,
+        "seed": seed,
+        "data_seed": seed,
+    }
+    if use_eval:
+        training_kwargs.update(
+            {
+                "eval_steps": 500,
+                "save_steps": 500,
+                "save_total_limit": 2,
+                "load_best_model_at_end": True,
+                "metric_for_best_model": "loss",
+                "greater_is_better": False,
+                "save_strategy": "steps",
+            }
+        )
+    else:
+        training_kwargs["save_strategy"] = "no"
+
+    try:
+        if use_eval:
+            training_args = TrainingArguments(
+                eval_strategy="steps",
+                **training_kwargs,
+            )
+        else:
+            training_args = TrainingArguments(**training_kwargs)
+    except TypeError:
+        if use_eval:
+            training_args = TrainingArguments(
+                evaluation_strategy="steps",
+                **training_kwargs,
+            )
+        else:
+            training_args = TrainingArguments(**training_kwargs)
+
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=dataset,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
         data_collator=collate,
     )
     trainer.add_callback(_ZeroGradSetToNoneCallback(trainer))
+    if use_eval:
+        trainer.add_callback(EarlyStoppingCallback(early_stopping_patience=3))
 
     print(
         "Starting training (cudaProfilerStart/Stop for nsys --capture-range=cudaProfilerApi)..."
@@ -187,7 +244,7 @@ def main() -> None:
     parser.add_argument("--model-id", required=True)
     parser.add_argument("--dataset-id", required=True)
     parser.add_argument("--split", default="test[:1%]")
-    parser.add_argument("--epochs", type=float, default=1.0)
+    parser.add_argument("--epochs", type=float, default=1)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--cache-dir", default="./data")
     parser.add_argument("--batch-size", type=int, default=1)
@@ -220,6 +277,12 @@ def main() -> None:
         default=None,
         help="Optimizer name for TrainingArguments (default: adamw_torch_fused on CUDA else adamw_torch).",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducible dataset shuffling and Trainer sampling.",
+    )
     args = parser.parse_args()
 
     print("Loading model and processor...")
@@ -234,6 +297,8 @@ def main() -> None:
         cache_dir="./cache",
     )
 
+    model = apply_qwen3_sparsity(model, keep_ratio=0.001)
+
     print("Loading dataset...")
     dataset = QwenDataset(
         dataset_id=args.dataset_id,
@@ -241,6 +306,8 @@ def main() -> None:
         processor=processor,
         cache_dir=args.cache_dir,
         image_max_side=args.image_max_side,
+        shuffle=True,
+        seed=args.seed,
     )
 
     run_finetune(
@@ -252,6 +319,7 @@ def main() -> None:
         batch_size=args.batch_size,
         bf16=False if args.no_bf16 else None,
         optim=args.optim,
+        seed=args.seed,
     )
 
 

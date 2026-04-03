@@ -18,8 +18,12 @@ class QwenDataset(Dataset):
         processor: Any,
         cache_dir: str | None = None,
         image_max_side: int | None = None,
+        shuffle: bool = False,
+        seed: int = 42,
     ) -> None:
         self.dataset = load_dataset(dataset_id, split=split, cache_dir=cache_dir)
+        if shuffle:
+            self.dataset = self.dataset.shuffle(seed=seed)
         self.processor = processor
         self.image_max_side = image_max_side
 
